@@ -1,43 +1,30 @@
 import re
-from datetime import datetime
+import logging
 
-def validate_query(query: str) -> bool:
-    """
-    Validate user query with multiple checks including minimum length
-    and valid characters to prevent injection attacks.
-    """
-    if not query or not isinstance(query, str):
-        return False
-        
-    # Check for minimum length
-    if len(query.strip()) < 3:
-        return False
-        
-    # Check for valid characters (prevent injection attacks)
-    if re.search(r'[^\w\s.,!?\-@()/]', query):
-        return False
-        
-    return True
+logger = logging.getLogger(__name__)
 
-def validate_model_name(model_name: str) -> bool:
-    """
-    Validate that the requested model is in the list of allowed models.
-    """
-    allowed_models = [
-        "gpt-3.5-turbo",
-        "gpt-4",
-        "claude-2",
-        "gemini-pro"
-    ]
+def validate_question(question: str) -> None:
+    """Validate the question input with detailed checks."""
+    if not question or not question.strip():
+        logger.warning("Empty question received")
+        raise ValueError("Question cannot be empty or whitespace only")
     
-    return model_name in allowed_models
-
-def validate_timestamp(timestamp: str) -> bool:
-    """
-    Validate that a timestamp is in ISO format.
-    """
-    try:
-        datetime.fromisoformat(timestamp)
-        return True
-    except ValueError:
-        return False
+    question_length = len(question.strip())
+    if question_length < 10:
+        logger.warning(f"Question too short: {question_length} characters")
+        raise ValueError(f"Question must be at least 10 characters long, got {question_length}")
+    
+    if question_length > 500:
+        logger.warning(f"Question too long: {question_length} characters")
+        raise ValueError(f"Question must not exceed 500 characters, got {question_length}")
+    
+    # Check for excessive repetition
+    if re.search(r"(.)\1{5,}", question):
+        logger.warning("Question contains excessive character repetition")
+        raise ValueError("Question contains too much repetition")
+    
+    # Basic profanity filter (expandable)
+    profanity = ["damn", "hell", "crap"]
+    if any(word in question.lower() for word in profanity):
+        logger.warning("Question contains inappropriate language")
+        raise ValueError("Question contains inappropriate language")

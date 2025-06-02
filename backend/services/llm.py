@@ -1,43 +1,49 @@
-import openai
-import os
+from openai import OpenAI, OpenAIError
 from dotenv import load_dotenv
-import asyncio
-from tenacity import retry, stop_after_attempt, wait_exponential
+import os
+import logging
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-# Load environment variables
 load_dotenv()
+logger = logging.getLogger(__name__)
 
-# Initialize OpenAI client
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, max=10))
-async def process_query(query: str, model: str = "gpt-3.5-turbo") -> str:
-    """
-    Process a user query with the LLM, with retry handling for reliability.
-    Crafts an effective prompt for the LLM to elicit well-structured responses.
-    """
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=4, max=10),
+    retry=retry_if_exception_type(OpenAIError)
+)
+def get_llm_response(question: str) -> str:
+    if not os.getenv("OPENAI_API_KEY"):
+        logger.error("OpenAI API key not found in environment variables")
+        raise ValueError("API key configuration missing")
+    
     try:
-        # Create effective prompt engineering
-        system_prompt = """You are a highly knowledgeable assistant that provides well-structured, 
-        detailed answers to user queries. Format your responses with clear sections, bullet points, 
-        and relevant details while maintaining readability."""
-        
-        response = await openai.ChatCompletion.create(
-            model=model,
+        logger.info(f"Sending question to LLM: {question}")
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": query}
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an expert travel assistant. Provide detailed, accurate, and well-structured answers "
+                        "using markdown formatting with headings (##), subheadings (###), and bullet points (-). "
+                        "Focus on clarity and completeness."
+                    )
+                },
+                {"role": "user", "content": question}
             ],
             temperature=0.7,
-            max_tokens=1000,
-            top_p=1.0,
-            frequency_penalty=0.0,
-            presence_penalty=0.0
+            max_tokens=1500,
+            timeout=30
         )
-        
-        return response.choices[0].message.content.strip()
-        
-    except openai.error.OpenAIError as e:
-        raise Exception(f"LLM Service Error: {str(e)}")
+        answer = response.choices[0].message.content.strip()
+        logger.info("LLM response received successfully")
+        return answer
+    except OpenAIError as oe:
+        logger.error(f"OpenAI API error: {str(oe)}")
+        raise Exception(f"Failed to communicate with LLM: {str(oe)}")
     except Exception as e:
-        raise Exception(f"Processing Error: {str(e)}")
+        logger.error(f"Unexpected error in LLM service: {str(e)}")
+        raise Exception(f"LLM processing error: {str(e)}")

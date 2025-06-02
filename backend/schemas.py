@@ -1,32 +1,15 @@
-from pydantic import BaseModel
-from typing import Optional, List
-from datetime import datetime
+from pydantic import BaseModel, Field, validator
+import logging
 
-class QueryRequest(BaseModel):
-    """
-    Schema for incoming query requests.
-    """
-    query: str
-    model: str = "gpt-3.5-turbo"
-    
-class QueryResponse(BaseModel):
-    """
-    Schema for query response.
-    """
-    question: str
-    answer: str
-    model: str
-    timestamp: datetime
-    
-class ErrorResponse(BaseModel):
-    """
-    Schema for error responses.
-    """
-    error: str
-    status_code: int
-    
-class HistoryResponse(BaseModel):
-    """
-    Schema for history response.
-    """
-    history: List[QueryResponse]
+logger = logging.getLogger(__name__)
+
+class Question(BaseModel):
+    text: str = Field(..., min_length=10, max_length=500, description="The user's question")
+
+    @validator("text")
+    def strip_text(cls, value):
+        return value.strip()
+
+class Answer(BaseModel):
+    answer: str = Field(..., description="The LLM-generated answer")
+    response_time: float = Field(..., ge=0, description="Time taken to process the request in seconds")

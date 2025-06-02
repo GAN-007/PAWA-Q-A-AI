@@ -1,66 +1,34 @@
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import Optional, List
-from services.llm import process_query
-from utils.validators import validate_query
-from datetime import datetime
+from fastapi import APIRouter, HTTPException, Header, status
+from schemas import Question, Answer
+from services.llm import get_llm_response
+from utils.validators import validate_question
+import time
+import logging
 
-router = APIRouter(
-    prefix="/qna",
-    tags=["Q&A"]
-)
+router = APIRouter()
+logger = logging.getLogger(__name__)
 
-class QueryRequest(BaseModel):
-    query: str
-    model: str = "gpt-3.5-turbo"
-    
-class QueryResponse(BaseModel):
-    question: str
-    answer: str
-    model: str
-    timestamp: datetime
-    
-class ErrorResponse(BaseModel):
-    error: str
-    status_code: int
-    
-class HistoryItem(BaseModel):
-    question: str
-    answer: str
-    model: str
-    timestamp: datetime
-    
-class HistoryResponse(BaseModel):
-    history: List[HistoryItem]
-
-@router.post("/ask", response_model=QueryResponse)
-async def ask_question(query_request: QueryRequest):
-    """
-    Endpoint to process a user question and return an AI-generated response.
-    Validates the input query before processing.
-    """
+@router.post("/ask", response_model=Answer, status_code=status.HTTP_200_OK)
+async def ask_question(
+    question: Question,
+    user_agent: str = Header(default=None, alias="User-Agent")
+):
+    start_time = time.time()
     try:
-        # Validate input
-        if not validate_query(query_request.query):
-            raise HTTPException(status_code=400, detail="Invalid query format")
-            
-        # Process query with LLM
-        response = await process_query(query_request.query, query_request.model)
-        
-        return {
-            "question": query_request.query,
-            "answer": response,
-            "model": query_request.model,
-            "timestamp": datetime.now()
-        }
+        logger.info(f"Received question: {question.text} from User-Agent: {user_agent}")
+        validate_question(question.text)
+        answer_text = get_llm_response(question.text)
+        if not answer_text.strip():
+            raise ValueError("LLM returned an empty response")
+        response_time = time.time() - start_time
+        logger.info(f"Processed question in {response_time:.2f} seconds")
+        return {"answer": answer_text, "response_time": response_time}
+    except ValueError as ve:
+        logger.warning(f"Validation error: {str(ve)}")
+        raise HTTPException(status_code=400, detail={"error": "Invalid input", "message": str(ve)})
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing query: {str(e)}")
-
-@router.get("/history", response_model=HistoryResponse)
-async def get_history():
-    """
-    Endpoint to retrieve chat history (in production, this would retrieve from a database).
-    Currently returns empty history.
-    """
-    # In a real implementation, this would retrieve from a database
-    return {"history": []}
+        logger.error(f"Internal server error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "Server error", "message": f"Failed to process request: {str(e)}"}
+        )

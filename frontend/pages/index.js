@@ -1,503 +1,452 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
 
 export default function Home() {
-  // State management
   const [question, setQuestion] = useState('');
-  const [response, setResponse] = useState('');
+  const [answer, setAnswer] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(null);
+  const [charCount, setCharCount] = useState(0);
   const [history, setHistory] = useState([]);
-  const [activeTab, setActiveTab] = useState('chat');
-  const [apiKey, setApiKey] = useState('');
-  const [isApiKeySet, setIsApiKeySet] = useState(false);
-  const [model, setModel] = useState('gpt-3.5-turbo');
-  const [models, setModels] = useState(['gpt-3.5-turbo', 'gpt-4', 'claude-2', 'gemini-pro']);
-  
-  // Check if API key is set in localStorage on component mount
+  const [theme, setTheme] = useState('dark'); // Default to dark theme
+  const [temperature, setTemperature] = useState(0.7);
+  const [activeTab, setActiveTab] = useState('query');
+  const [status, setStatus] = useState('Ready');
+  const [selectedModel, setSelectedModel] = useState('default');
+  const [file, setFile] = useState(null);
+  const [responseLength, setResponseLength] = useState(100);
+  const textareaRef = useRef(null);
+
+  // Theme configurations with hover effects
+  const themes = {
+    light: {
+      background: '#ffffff',
+      text: '#000000',
+      primary: '#2dd4bf',
+      secondary: '#e2e8f0',
+      border: '#d1d5db',
+      accent: '#718096',
+      error: '#fee2e2',
+      errorText: '#ef4444',
+      hover: '#a7f3d0', // Light hover color
+    },
+    dark: {
+      background: '#1a202c',
+      text: '#ffffff',
+      primary: '#34d399',
+      secondary: '#2d3748',
+      border: '#4a5568',
+      accent: '#a0aec0',
+      error: '#7f1d1d',
+      errorText: '#f87171',
+      hover: '#059669', // Dark hover color
+    },
+    matrix: {
+      background: '#000000',
+      text: '#00ff00',
+      primary: '#00ff00',
+      secondary: '#001100',
+      border: '#003300',
+      accent: '#00aa00',
+      error: '#330000',
+      errorText: '#ff0000',
+      hover: '#00aa00', // Matrix hover color
+    },
+  };
+
+  // Update character count
   useEffect(() => {
-    const savedApiKey = localStorage.getItem('llm_api_key');
-    if (savedApiKey) {
-      setApiKey(savedApiKey);
-      setIsApiKeySet(true);
-    }
+    setCharCount(question.length);
+  }, [question]);
+
+  // Load history from localStorage on mount
+  useEffect(() => {
+    const savedHistory = JSON.parse(localStorage.getItem('history') || '[]');
+    setHistory(savedHistory);
   }, []);
-  
-  // Handle form submission
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    // Validation checks
-    if (!isApiKeySet) {
-      setError('Please set your API key first');
-      return;
-    }
-    
+
+  // Save history to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem('history', JSON.stringify(history));
+  }, [history]);
+
+  const handleSubmit = async () => {
+    setError(null);
+    setAnswer('');
     if (!question.trim()) {
-      setError('Please enter a question');
+      setError('Question cannot be empty or just whitespace');
       return;
     }
-    
-    // Set loading state
+    if (question.length < 10) {
+      setError('Question must be at least 10 characters long');
+      return;
+    }
+    if (question.length > 500) {
+      setError('Question must not exceed 500 characters');
+      return;
+    }
+
     setLoading(true);
-    setError('');
-    setResponse('');
-    
+    setStatus('Fetching response...');
     try {
-      // Make API call to backend
-      const res = await fetch('/api/qna/ask', {
+      const formData = new FormData();
+      formData.append('text', question);
+      formData.append('temperature', temperature);
+      formData.append('model', selectedModel);
+      formData.append('responseLength', responseLength);
+      if (file) {
+        formData.append('file', file);
+      }
+
+      const res = await fetch('http://localhost:8001/api/v1/ask', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-          query: question,
-          model: model
-        }),
+        body: formData,
+        timeout: 30000
       });
-      
+
       if (!res.ok) {
-        throw new Error('API request failed');
+        const errorData = await res.json();
+        throw new Error(errorData.detail.message || 'Failed to fetch response');
       }
-      
+
       const data = await res.json();
-      
-      if (!data.answer) {
-        throw new Error('Empty response from API');
-      }
-      
-      // Update history with new response
-      const newEntry = { 
-        question: question, 
-        answer: data.answer,
-        model: model,
-        timestamp: new Date().toLocaleString()
-      };
-      
-      setHistory([newEntry, ...history]);
-      setResponse(data.answer);
+      // Simulate response streaming
+      const words = data.answer.split(' ');
+      let currentAnswer = '';
+      const interval = setInterval(() => {
+        if (words.length > 0) {
+          currentAnswer += words.shift() + ' ';
+          setAnswer(currentAnswer);
+        } else {
+          clearInterval(interval);
+        }
+      }, 100);
+
+      setHistory([...history, { question, answer: data.answer, timestamp: new Date().toLocaleString() }]);
+      setStatus('Response received');
+      setFile(null);
     } catch (err) {
-      setError(err.message || 'Something went wrong');
+      setError(`Error: ${err.message}`);
+      setStatus('Error occurred');
     } finally {
       setLoading(false);
     }
   };
-  
-  // Handle API key submission
-  const handleApiKeySubmit = (e) => {
-    e.preventDefault();
-    
-    if (!apiKey.trim()) {
-      setError('Please enter an API key');
-      return;
+
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !loading) {
+      e.preventDefault();
+      handleSubmit();
     }
-    
-    // Save API key to localStorage
-    localStorage.setItem('llm_api_key', apiKey);
-    setIsApiKeySet(true);
-    setError('');
-  };
-  
-  // Clear API key
-  const clearApiKey = () => {
-    localStorage.removeItem('llm_api_key');
-    setApiKey('');
-    setIsApiKeySet(false);
-  };
-  
-  // Clear history
-  const clearHistory = () => {
-    if (window.confirm('Are you sure you want to clear the history?')) {
-      setHistory([]);
-    }
-  };
-  
-  // Copy to clipboard
-  const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text)
-      .then(() => {
-        alert('Copied to clipboard!');
-      })
-      .catch(err => {
-        console.error('Failed to copy: ', err);
-      });
   };
 
+  const handleFileChange = (e) => {
+    setFile(e.target.files[0]);
+  };
+
+  const clearHistory = () => {
+    setHistory([]);
+    setStatus('History cleared');
+    setTimeout(() => setStatus('Ready'), 2000);
+  };
+
+  const resetQuery = () => {
+    setQuestion('');
+    setAnswer('');
+    setError(null);
+    setStatus('Query reset');
+    setTimeout(() => setStatus('Ready'), 2000);
+  };
+
+  const copyAnswer = () => {
+    if (answer) {
+      navigator.clipboard.writeText(answer);
+      setStatus('Answer copied to clipboard');
+      setTimeout(() => setStatus('Ready'), 2000);
+    }
+  };
+
+  // Get current theme colors
+  const currentTheme = themes[theme];
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 text-white">
-      <div className="container mx-auto px-4 py-8 max-w-4xl">
-        <header className="mb-8">
-          <div className="flex justify-between items-center">
-            <h1 className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
-              PAWA Q&A AI
-            </h1>
-            <div className="flex items-center space-x-2">
-              {!isApiKeySet ? (
-                <button
-                  onClick={() => setActiveTab('settings')}
-                  className="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 rounded-lg transition-colors flex items-center"
-                >
-                  <svg className="w-5 h-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.532 1.532 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.533 1.533 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 00-2.287.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
-                  </svg>
-                  Set API Key
-                </button>
-              ) : (
-                <div className="flex items-center">
-                  <span className="text-sm mr-2">API Key Set</span>
-                  <button
-                    onClick={clearApiKey}
-                    className="text-red-400 hover:text-red-300"
-                  >
-                    <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-          <p className="mt-2 text-gray-300">Interactive Q&A system with LLM integration</p>
+    <div style={{ minHeight: '100vh', backgroundColor: currentTheme.background, color: currentTheme.text, fontFamily: 'Courier New, Courier, monospace' }}>
+      <div style={{ maxWidth: '64rem', margin: '0 auto', padding: '1.5rem' }}>
+        <header style={{ marginBottom: '2rem' }}>
+          <h1 style={{ fontSize: '2.25rem', fontWeight: 700, color: currentTheme.primary, borderBottom: `2px solid ${currentTheme.primary}`, paddingBottom: '0.5rem' }}>
+            PAWA Q&A AI
+          </h1>
+          <p style={{ marginTop: '0.5rem', color: currentTheme.accent }}>Ask travel-related questions and get detailed answers.</p>
         </header>
-        
-        {/* Navigation Tabs */}
-        <div className="mb-6">
-          <div className="flex border-b border-gray-700">
+
+        <nav style={{ marginBottom: '1rem' }}>
+          {['query', 'history', 'settings'].map((tab) => (
             <button
-              className={`px-4 py-2 font-medium ${activeTab === 'chat' ? 'text-blue-400 border-b-2 border-blue-400' : 'text-gray-400 hover:text-gray-300'}`}
-              onClick={() => setActiveTab('chat')}
+              key={tab}
+              style={{
+                padding: '0.5rem 1rem',
+                backgroundColor: activeTab === tab ? currentTheme.primary : currentTheme.secondary,
+                color: activeTab === tab ? currentTheme.background : currentTheme.accent,
+                border: 'none',
+                borderRadius: '0.375rem',
+                marginRight: '0.5rem',
+                cursor: 'pointer',
+                transition: 'background-color 0.2s, transform 0.1s',
+                ':hover': { backgroundColor: currentTheme.hover, transform: 'scale(1.05)' },
+              }}
+              onClick={() => setActiveTab(tab)}
+              aria-label={`Switch to ${tab} tab`}
+              aria-pressed={activeTab === tab}
             >
-              Chat
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
-            <button
-              className={`px-4 py-2 font-medium ${activeTab === 'history' ? 'text-blue-400 border-b-2 border-blue-400' : 'text-gray-400 hover:text-gray-300'}`}
-              onClick={() => setActiveTab('history')}
-            >
-              History ({history.length})
-            </button>
-            <button
-              className={`px-4 py-2 font-medium ${activeTab === 'settings' ? 'text-blue-400 border-b-2 border-blue-400' : 'text-gray-400 hover:text-gray-300'}`}
-              onClick={() => setActiveTab('settings')}
-            >
-              Settings
-            </button>
-          </div>
-        </div>
-        
-        {/* Chat Tab */}
-        {activeTab === 'chat' && (
-          <div className="space-y-6">
-            {/* Model Selection */}
-            <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-4 border border-gray-700">
-              <label htmlFor="model" className="block text-sm font-medium text-gray-300 mb-2">
-                Select LLM Model
-              </label>
+          ))}
+        </nav>
+
+        {activeTab === 'query' && (
+          <section style={{ marginBottom: '1.5rem', transition: 'opacity 0.5s ease-in-out', opacity: 1 }}>
+            <div style={{ backgroundColor: currentTheme.secondary, padding: '1rem', borderRadius: '0.375rem', border: `1px solid ${currentTheme.border}` }}>
+              <h2 style={{ fontSize: '1.5rem', fontWeight: 600, color: currentTheme.primary, marginBottom: '1rem' }}>Query Interface</h2>
+              
               <select
-                id="model"
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                style={{ padding: '0.5rem', marginBottom: '1rem', width: '100%', backgroundColor: currentTheme.background, color: currentTheme.text, border: `1px solid ${currentTheme.border}`, borderRadius: '0.375rem', transition: 'border-color 0.2s' }}
+                aria-label="Select AI model"
               >
-                {models.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
+                <option value="default">Default GPT</option>
+                <option value="model1">GPT 4</option>
+                <option value="model2">GPT 4o</option>
+                <option value="model1">Gemini 1.5 Pro</option>
+                <option value="model2">Gemini 2.5 Flash</option>
+                <option value="model1">Claude 3.5 Sonnet</option>
+                <option value="model2">Claude 3.7 Sonnet</option>
+                <option value="model1">Claude 4</option>
+                
               </select>
-            </div>
-            
-            {/* Question Form */}
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label htmlFor="question" className="block text-sm font-medium text-gray-300 mb-2">
-                  Ask a Question
-                </label>
+
+              <div style={{ position: 'relative' }}>
                 <textarea
-                  id="question"
-                  rows={4}
+                  ref={textareaRef}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    backgroundColor: currentTheme.background,
+                    border: `1px solid ${currentTheme.border}`,
+                    borderRadius: '0.375rem',
+                    resize: 'none',
+                    outline: 'none',
+                    color: currentTheme.text,
+                    opacity: loading ? 0.5 : 1,
+                    transition: 'border-color 0.2s',
+                  }}
+                  rows="4"
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
-                  placeholder="Enter your question here..."
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                ></textarea>
+                  onKeyPress={handleKeyPress}
+                  placeholder="Type your question here (e.g., What documents do I need to travel from Kenya to Ireland?)"
+                  disabled={loading}
+                  aria-label="Enter your question"
+                />
+                <span style={{ position: 'absolute', bottom: '0.5rem', right: '0.5rem', color: currentTheme.accent, fontSize: '0.75rem' }}>
+                  {charCount}/500
+                </span>
               </div>
-              
-              <div className="flex justify-end space-x-3">
+
+              <input
+                type="file"
+                onChange={handleFileChange}
+                style={{ marginTop: '1rem', color: currentTheme.text, transition: 'color 0.2s' }}
+                disabled={loading}
+                aria-label="Upload a file"
+              />
+
+              <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem' }}>
                 <button
-                  type="button"
-                  onClick={() => setQuestion('')}
-                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
-                >
-                  Clear
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading || !isApiKeySet}
-                  className="px-6 py-2 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 rounded-lg transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                  style={{
+                    padding: '0.5rem 1.5rem',
+                    backgroundColor: loading ? currentTheme.secondary : currentTheme.primary,
+                    color: currentTheme.background,
+                    border: 'none',
+                    borderRadius: '0.375rem',
+                    fontWeight: 600,
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    transition: 'background-color 0.2s, transform 0.1s',
+                    ':hover': { backgroundColor: currentTheme.hover, transform: 'scale(1.05)' },
+                  }}
+                  onClick={handleSubmit}
+                  disabled={loading}
+                  aria-label={loading ? 'Processing question' : 'Submit question'}
                 >
                   {loading ? (
-                    <>
-                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    <span style={{ display: 'flex', alignItems: 'center' }}>
+                      <svg style={{ animation: 'spin 1s linear infinite', height: '1.25rem', width: '1.25rem', marginRight: '0.5rem' }} viewBox="0 0 24 24">
+                        <circle style={{ opacity: 0.25 }} cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path style={{ opacity: 0.75 }} fill="currentColor" d="M4 12a8 8 0 018-8v8h8a8 8 0 01-16 0z" />
                       </svg>
                       Processing...
-                    </>
+                    </span>
                   ) : (
-                    'Ask Question'
+                    'Ask'
                   )}
                 </button>
-              </div>
-            </form>
-            
-            {/* Error Message */}
-            {error && (
-              <div className="bg-red-900/30 border-l-4 border-red-500 text-red-200 p-4 rounded">
-                <div className="flex">
-                  <svg className="h-5 w-5 text-red-400 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                  </svg>
-                  <p>{error}</p>
-                </div>
-              </div>
-            )}
-            
-            {/* Response Display */}
-            {response && (
-              <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700 animate-fade-in">
-                <h2 className="text-xl font-semibold mb-3 flex items-center">
-                  <svg className="w-5 h-5 mr-2 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 110 2h0a1 1 0 110-2zm-1 3a1 1 0 011-1h0a1 1 0 110 2h0a1 1 0 01-1-1z" clipRule="evenodd" />
-                  </svg>
-                  AI Response
-                </h2>
-                <div className="prose prose-invert max-w-none">
-                  <div className="whitespace-pre-wrap">{response}</div>
-                </div>
-                <div className="mt-4 flex justify-end">
-                  <button
-                    onClick={() => copyToClipboard(response)}
-                    className="text-sm text-gray-400 hover:text-gray-300 flex items-center"
-                  >
-                    <svg className="w-4 h-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                      <path d="M8 2a1 1 0 000 2H5v8.2a2 2 0 00-1.9 2H2a1 1 0 00-1 1v1a2 2 0 002 2h14a2 2 0 002-2v-1a1 1 0 00-1-1h-1.9a2 2 0 00-1.99-2H10V4a1 1 0 000-2H8z" />
-                      <path d="M0 17.7a.7.7 0 01.7-.7h18.6a.7.7 0 01.7.7v.6a.7.7 0 01-.7.7H0.7a.7.7 0 01-.7-.7v-.6z" />
-                    </svg>
-                    Copy to clipboard
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-        
-        {/* History Tab */}
-        {activeTab === 'history' && (
-          <div className="space-y-4">
-            {history.length > 0 ? (
-              <>
-                <div className="flex justify-between items-center">
-                  <h2 className="text-xl font-semibold">Query History</h2>
-                  <button
-                    onClick={clearHistory}
-                    className="text-sm text-red-400 hover:text-red-300 flex items-center"
-                  >
-                    <svg className="w-4 h-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                    </svg>
-                    Clear History
-                  </button>
-                </div>
-                
-                <div className="space-y-4">
-                  {history.map((entry, index) => (
-                    <div 
-                      key={index} 
-                      className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-4 border border-gray-700 hover:border-gray-600 transition-colors"
-                    >
-                      <div className="flex justify-between items-start mb-2">
-                        <div>
-                          <h3 className="font-medium">{entry.question}</h3>
-                          <p className="text-sm text-gray-400 mt-1">
-                            Model: {entry.model} • {entry.timestamp}
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => copyToClipboard(entry.answer)}
-                          className="text-gray-400 hover:text-gray-300"
-                          title="Copy to clipboard"
-                        >
-                          <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
-                            <path d="M8 2a1 1 0 000 2H5v8.2a2 2 0 00-1.9 2H2a1 1 0 00-1 1v1a2 2 0 002 2h14a2 2 0 002-2v-1a1 1 0 00-1-1h-1.9a2 2 0 00-1.99-2H10V4a1 1 0 000-2H8z" />
-                            <path d="M0 17.7a.7.7 0 01.7-.7h18.6a.7.7 0 01.7.7v.6a.7.7 0 01-.7.7H0.7a.7.7 0 01-.7-.7v-.6z" />
-                          </svg>
-                        </button>
-                      </div>
-                      <div className="mt-2 prose prose-invert max-w-none">
-                        <div className="whitespace-pre-wrap text-sm">{entry.answer}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <div className="text-center py-12 bg-gray-800/30 rounded-lg border border-gray-700">
-                <svg className="mx-auto h-12 w-12 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                  <line x1="16" y1="2" x2="16" y2="6"></line>
-                  <line x1="8" y1="2" x2="8" y2="6"></line>
-                  <line x1="3" y1="10" x2="21" y2="10"></line>
-                </svg>
-                <h3 className="mt-2 text-sm font-medium text-gray-400">No history yet</h3>
-                <p className="mt-1 text-sm text-gray-500">Your query history will appear here</p>
-              </div>
-            )}
-          </div>
-        )}
-        
-        {/* Settings Tab */}
-        {activeTab === 'settings' && (
-          <div className="space-y-6">
-            {/* API Settings */}
-            <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700">
-              <h2 className="text-xl font-semibold mb-4">API Settings</h2>
-              
-              <div className="space-y-4">
-                {!isApiKeySet ? (
-                  <>
-                    <p className="text-gray-300">
-                      Enter your API key for the LLM service you're using. This will be stored locally in your browser.
-                    </p>
-                    
-                    <form onSubmit={handleApiKeySubmit} className="space-y-4">
-                      <div>
-                        <label htmlFor="apiKey" className="block text-sm font-medium text-gray-300 mb-2">
-                          API Key
-                        </label>
-                        <input
-                          type="text"
-                          id="apiKey"
-                          value={apiKey}
-                          onChange={(e) => setApiKey(e.target.value)}
-                          placeholder="Enter your API key..."
-                          className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                      
-                      <div className="flex space-x-3">
-                        <button
-                          type="submit"
-                          className="px-6 py-2 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 rounded-lg transition-all transform hover:scale-105"
-                        >
-                          Save API Key
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setApiKey('')}
-                          className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
-                        >
-                          Clear
-                        </button>
-                      </div>
-                    </form>
-                  </>
-                ) : (
-                  <div className="space-y-4">
-                    <p className="text-green-400">API key is set successfully.</p>
-                    <p className="text-gray-300">
-                      Your API key is stored locally in your browser. You can clear it at any time.
-                    </p>
-                    <div className="flex space-x-3">
-                      <button
-                        onClick={clearApiKey}
-                        className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition-colors flex items-center"
-                      >
-                        <svg className="w-5 h-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                        </svg>
-                        Clear API Key
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-            
-            {/* Model Management */}
-            <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700">
-              <h2 className="text-xl font-semibold mb-4">Model Management</h2>
-              
-              <div className="space-y-4">
-                <p className="text-gray-300">
-                  Select from available models or add custom models.
-                </p>
-                
-                <div>
-                  <label htmlFor="modelList" className="block text-sm font-medium text-gray-300 mb-2">
-                    Available Models
-                  </label>
-                  <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
-                    {models.map((m) => (
-                      <div 
-                        key={m} 
-                        className="flex items-center justify-between p-2 bg-gray-700 rounded-lg"
-                      >
-                        <span>{m}</span>
-                        <button
-                          onClick={() => setModels(models.filter(model => model !== m))}
-                          className="text-gray-400 hover:text-red-400"
-                        >
-                          <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 010-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                          </svg>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                
-                <form 
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const newModel = e.target.elements.newModel.value.trim();
-                    if (newModel && !models.includes(newModel)) {
-                      setModels([...models, newModel]);
-                      e.target.elements.newModel.value = '';
-                    }
+                <button
+                  style={{
+                    padding: '0.5rem 1.5rem',
+                    backgroundColor: currentTheme.secondary,
+                    color: currentTheme.text,
+                    border: 'none',
+                    borderRadius: '0.375rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'background-color 0.2s, transform 0.1s',
+                    ':hover': { backgroundColor: currentTheme.hover, transform: 'scale(1.05)' },
                   }}
-                  className="flex space-x-3"
+                  onClick={resetQuery}
+                  aria-label="Reset query"
                 >
-                  <input
-                    type="text"
-                    name="newModel"
-                    placeholder="Add new model name..."
-                    className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <button
-                    type="submit"
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-                  >
-                    Add
-                  </button>
-                </form>
+                  Reset
+                </button>
               </div>
             </div>
-          </div>
+            {error && (
+              <div style={{ padding: '1rem', backgroundColor: currentTheme.error, border: `1px solid ${currentTheme.error}`, borderRadius: '0.375rem', marginTop: '1rem' }} role="alert">
+                <p style={{ color: currentTheme.errorText }}>{error}</p>
+              </div>
+            )}
+            {answer && (
+              <div style={{ 
+                backgroundColor: currentTheme.secondary, 
+                padding: '1rem', 
+                borderRadius: '0.375rem', 
+                border: `1px solid ${currentTheme.border}`, 
+                marginTop: '1rem',
+                transition: 'opacity 0.5s ease-in-out',
+                opacity: answer ? 1 : 0
+              }}>
+                <h2 style={{ fontSize: '1.5rem', fontWeight: 600, color: currentTheme.primary, borderBottom: `2px solid ${currentTheme.primary}`, paddingBottom: '0.25rem', marginBottom: '0.75rem' }}>
+                  Response
+                </h2>
+                <div style={{ color: currentTheme.text }}>
+                  <ReactMarkdown>{answer}</ReactMarkdown>
+                </div>
+                <button
+                  style={{
+                    marginTop: '0.5rem',
+                    padding: '0.25rem 1rem',
+                    backgroundColor: currentTheme.secondary,
+                    color: currentTheme.text,
+                    border: 'none',
+                    borderRadius: '0.375rem',
+                    cursor: 'pointer',
+                    transition: 'background-color 0.2s, transform 0.1s',
+                    ':hover': { backgroundColor: currentTheme.hover, transform: 'scale(1.05)' },
+                  }}
+                  onClick={copyAnswer}
+                  aria-label="Copy response to clipboard"
+                >
+                  Copy
+                </button>
+              </div>
+            )}
+          </section>
         )}
-        
-        <footer className="mt-12 pt-6 border-t border-gray-800 text-center text-gray-500 text-sm">
-          <p>PAWA Q&A AI • Powered by LLMs • v1.0.0</p>
+
+        {activeTab === 'history' && (
+          <section style={{ marginTop: '1.5rem', transition: 'opacity 0.5s ease-in-out', opacity: 1 }}>
+            <div style={{ backgroundColor: currentTheme.secondary, padding: '1rem', borderRadius: '0.375rem', border: `1px solid ${currentTheme.border}` }}>
+              <h2 style={{ fontSize: '1.5rem', fontWeight: 600, color: currentTheme.primary, marginBottom: '1rem' }}>Conversation History</h2>
+              <button
+                onClick={clearHistory}
+                style={{
+                  padding: '0.5rem 1rem',
+                  backgroundColor: currentTheme.error,
+                  color: currentTheme.text,
+                  border: 'none',
+                  borderRadius: '0.375rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'background-color 0.2s, transform 0.1s',
+                  ':hover': { backgroundColor: currentTheme.hover, transform: 'scale(1.05)' },
+                }}
+                aria-label="Clear conversation history"
+              >
+                Clear History
+              </button>
+              <ul style={{ marginTop: '1rem' }}>
+                {history.map((item, index) => (
+                  <li key={index} style={{ marginBottom: '0.5rem', color: currentTheme.accent }}>
+                    <strong>Q:</strong> {item.question} <br />
+                    <strong>A:</strong> {item.answer} <br />
+                    <em>{item.timestamp}</em>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </section>
+        )}
+
+        {activeTab === 'settings' && (
+          <section style={{ marginTop: '1.5rem', transition: 'opacity 0.5s ease-in-out', opacity: 1 }}>
+            <div style={{ backgroundColor: currentTheme.secondary, padding: '1rem', borderRadius: '0.375rem', border: `1px solid ${currentTheme.border}` }}>
+              <h2 style={{ fontSize: '1.5rem', fontWeight: 600, color: currentTheme.primary, marginBottom: '1rem' }}>Settings</h2>
+              
+              <label style={{ display: 'block', marginBottom: '1rem', color: currentTheme.accent }}>
+                Theme:
+                <select
+                  value={theme}
+                  onChange={(e) => setTheme(e.target.value)}
+                  style={{ marginLeft: '0.5rem', padding: '0.25rem', backgroundColor: currentTheme.background, color: currentTheme.text, border: `1px solid ${currentTheme.border}`, borderRadius: '0.375rem', transition: 'border-color 0.2s' }}
+                  aria-label="Select theme"
+                >
+                  <option value="light">Light</option>
+                  <option value="dark">Dark</option>
+                  <option value="matrix">Matrix</option>
+                </select>
+              </label>
+
+              <div>
+                <p style={{ marginBottom: '0.5rem', color: currentTheme.accent }}>
+                  Temperature controls the randomness of the AI's responses. Lower values make it more deterministic, higher values more creative.
+                </p>
+                <label style={{ display: 'block', color: currentTheme.accent }}>
+                  Temperature:
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.1"
+                    value={temperature}
+                    onChange={(e) => setTemperature(parseFloat(e.target.value))}
+                    style={{ marginLeft: '0.5rem' }}
+                    aria-label="Adjust temperature"
+                  />
+                  <span style={{ marginLeft: '0.5rem' }}>{temperature.toFixed(1)}</span>
+                </label>
+              </div>
+
+              <div style={{ marginTop: '1rem' }}>
+                <p style={{ marginBottom: '0.5rem', color: currentTheme.accent }}>
+                  Response Length (words):
+                </p>
+                <input
+                  type="number"
+                  min="50"
+                  max="500"
+                  value={responseLength}
+                  onChange={(e) => setResponseLength(parseInt(e.target.value))}
+                  style={{ width: '100px', padding: '0.25rem', backgroundColor: currentTheme.background, color: currentTheme.text, border: `1px solid ${currentTheme.border}`, borderRadius: '0.375rem', transition: 'border-color 0.2s' }}
+                  aria-label="Set response length"
+                />
+              </div>
+            </div>
+          </section>
+        )}
+
+        <footer style={{ marginTop: '1.5rem', textAlign: 'center', color: currentTheme.accent }}>
+          <p>Status: {status}</p>
         </footer>
       </div>
-      
-      <style jsx>{`
-        @keyframes fade-in {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fade-in {
-          animation: fade-in 0.3s ease-out forwards;
-        }
-      `}</style>
     </div>
   );
 }

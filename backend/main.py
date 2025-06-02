@@ -1,35 +1,36 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
-from routers.qna import router as qna_router
-import uvicorn
-import os
-from dotenv import load_dotenv
+from routers import qna
+import logging
 
-# Load environment variables
-load_dotenv()
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="PAWA Q&A AI",
-    description="Interactive Q&A system with LLM integration",
-    version="1.0.0"
+    description="An advanced interactive Q&A system with LLM integration, optimized for travel queries.",
+    version="1.1.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json"
 )
 
-# Add CORS middleware
+# Enable CORS with detailed configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+    expose_headers=["X-Process-Time"]
 )
 
-# Include routers
-app.include_router(qna_router, prefix="/api")
+# Include the Q&A router
+app.include_router(qna.router, prefix="/api/v1", tags=["Q&A"])
 
-@app.get("/health")
+# Health check endpoint
+@app.get("/health", status_code=status.HTTP_200_OK)
 async def health_check():
-    """Health check endpoint to verify if the service is running"""
-    return {"status": "healthy", "version": "1.0.0"}
-
-if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    logger.info("Health check requested")
+    return {"status": "healthy", "version": app.version}

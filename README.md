@@ -46,7 +46,7 @@ Backend Setup
 Navigate to the backend directory:
 
 
-Bash
+
 cd backend
 
 
@@ -55,7 +55,7 @@ cd backend
 Create and activate a virtual environment:
 
 
-Bash
+
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
@@ -65,7 +65,6 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 Install dependencies:
 
 
-Bash
 pip install fastapi uvicorn pydantic openai python-dotenv tenacity
 
 
@@ -83,7 +82,7 @@ OPENAI_API_KEY=your_openai_api_key_here
 Run the server:
 
 
-Bash
+
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
 
@@ -99,7 +98,7 @@ Frontend Setup
 Navigate to the frontend directory:
 
 
-Bash
+
 cd frontend
 
 
@@ -108,7 +107,7 @@ cd frontend
 Install dependencies:
 
 
-Bash
+
 npm install
 npm install react-markdown
 
@@ -118,7 +117,7 @@ npm install react-markdown
 Run the development server:
 
 
-Bash
+
 npm run dev
 
 

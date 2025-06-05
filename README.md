@@ -1,7 +1,7 @@
-✨ PAWA Q&A AI ✨ ([GitHub](https://github.com/GAN-007))
+✨ PAWA Q&A AI ✨ ([GitHub](https://github.com/GAN-007/PAWA-Q-A-AI))
 
 
-Author: George Alfred Nyamema ([GitHub](https://github.com/GAN-007/PAWA-Q-A-AI))
+Author: George Alfred Nyamema ([GitHub](https://github.com/GAN-007))
 
 PAWA Q&A AI is an advanced, interactive system designed to provide detailed and accurate responses to travel-related queries. 🌍 This project seamlessly integrates cutting-edge technologies to deliver a robust and user-friendly experience:
 OpenAI's ChatGPT for powerful natural language processing.

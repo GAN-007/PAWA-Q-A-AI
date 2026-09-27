@@ -14,7 +14,7 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     wait=wait_exponential(multiplier=1, min=4, max=10),
     retry=retry_if_exception_type(OpenAIError)
 )
-def get_llm_response(question: str) -> str:
+def get_llm_response(question: str, advisory_context: str = "") -> str:
     if not os.getenv("OPENAI_API_KEY"):
         logger.error("OpenAI API key not found in environment variables")
         raise ValueError("API key configuration missing")
@@ -29,7 +29,10 @@ def get_llm_response(question: str) -> str:
                     "content": (
                         "You are an expert travel assistant. Provide detailed, accurate, and well-structured answers "
                         "using markdown formatting with headings (##), subheadings (###), and bullet points (-). "
-                        "Focus on clarity and completeness."
+                        "Focus on clarity and completeness. "
+                        "When current regulations, prices, schedules, advisories, legal/immigration rules, or other "
+                        "time-sensitive facts matter, explicitly tell the user to verify against current official sources."
+                        + advisory_context
                     )
                 },
                 {"role": "user", "content": question}

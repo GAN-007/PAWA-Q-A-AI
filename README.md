@@ -206,3 +206,20 @@ Added a loading spinner during API calls to provide real-time feedback.
 Implemented accessibility improvements for broader usability and inclusivity.
 
 
+
+
+## Optional Laya / System-One routing
+
+PAWA can classify a question before the existing generative LLM call through a
+Jev-compatible `/v1/systemone` service. The feature defaults to `off`; `shadow`
+records no behavioral change, and `advisory` passes typed routing signals to the
+existing prompt as non-authoritative strategy context.
+
+```bash
+PAWA_SYSTEM_ONE_MODE=off
+PAWA_SYSTEM_ONE_BASE_URL=http://127.0.0.1:8000
+PAWA_SYSTEM_ONE_API_KEY=
+PAWA_SYSTEM_ONE_TIMEOUT_SECONDS=1.5
+```
+
+Provider failure always fails open to the existing PAWA LLM path.

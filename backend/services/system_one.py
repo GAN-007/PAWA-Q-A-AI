@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import time
@@ -34,10 +35,35 @@ class PawaSystemOne:
             float(timeout_seconds or os.getenv("PAWA_SYSTEM_ONE_TIMEOUT_SECONDS", "1.5")),
         )
         self.transport = transport
+        self._shadow_tasks: set[asyncio.Task[Any]] = set()
 
     @property
     def enabled(self) -> bool:
         return self.mode in {"shadow", "advisory"} and bool(self.base_url)
+
+    async def classify_for_answer(self, question: str) -> dict[str, Any] | None:
+        """Return advisory evidence only when it is allowed to influence answer depth.
+
+        Shadow mode is strictly observational: classification runs in the
+        background, the incumbent LLM prompt is unchanged, and the API response
+        does not expose a shadow result as if it were part of answer generation.
+        """
+        if not self.enabled:
+            return None
+        if self.mode == "shadow":
+            task = asyncio.create_task(self.classify(question))
+            self._shadow_tasks.add(task)
+
+            def _done(completed: asyncio.Task[Any]) -> None:
+                self._shadow_tasks.discard(completed)
+                try:
+                    completed.result()
+                except Exception as exc:
+                    logger.debug("PAWA shadow System-One task failed: %s", exc)
+
+            task.add_done_callback(_done)
+            return None
+        return await self.classify(question)
 
     async def classify(self, question: str) -> dict[str, Any] | None:
         text = (question or "").strip()
@@ -112,6 +138,8 @@ class PawaSystemOne:
                 )
                 response.raise_for_status()
                 body = response.json()
+            if not isinstance(body, dict):
+                raise TypeError("System-One response must be a JSON object")
             answers = body.get("answers")
             if not isinstance(answers, dict):
                 raise ValueError("System-One response is missing answers")

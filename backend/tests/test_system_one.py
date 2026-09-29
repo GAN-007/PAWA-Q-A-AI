@@ -62,3 +62,48 @@ def test_provider_failure_fails_open():
         transport=httpx.MockTransport(handler),
     )
     assert asyncio.run(client.classify("Plan my trip")) is None
+
+
+def test_non_object_provider_payload_fails_open():
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=["invalid"])
+
+    client = PawaSystemOne(
+        mode="advisory",
+        base_url="http://laya.test:8000",
+        transport=httpx.MockTransport(handler),
+    )
+    assert asyncio.run(client.classify("Plan a trip to Nairobi")) is None
+
+
+def test_shadow_classify_for_answer_does_not_return_advisory_prompt_data():
+    async def scenario():
+        gate = asyncio.Event()
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            await gate.wait()
+            return httpx.Response(
+                200,
+                json={
+                    "answers": {
+                        "domain": {
+                            "type": "choice",
+                            "choice": "travel_planning",
+                            "confidence": 0.9,
+                        }
+                    }
+                },
+            )
+
+        client = PawaSystemOne(
+            mode="shadow",
+            base_url="http://laya.test:8000",
+            transport=httpx.MockTransport(handler),
+        )
+        result = await client.classify_for_answer("Plan my trip")
+        assert result is None
+        gate.set()
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+    asyncio.run(scenario())

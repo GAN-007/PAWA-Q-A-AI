@@ -18,7 +18,7 @@ async def ask_question(
     try:
         logger.info(f"Received question: {question.text} from User-Agent: {user_agent}")
         validate_question(question.text)
-        system_one = await PawaSystemOne().classify(question.text)
+        system_one = await PawaSystemOne().classify_for_answer(question.text)
         answer_text = get_llm_response(question.text, advisory_prompt(system_one))
         if not answer_text.strip():
             raise ValueError("LLM returned an empty response")
